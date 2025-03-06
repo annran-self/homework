@@ -1,0 +1,274 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.STD_LOGIC_ARITH.ALL;
+
+entity VendingMachine is
+    Port (
+        cllk: in std_logic;
+        clk : in STD_LOGIC; -- 100Hz时钟信号
+        reset : in STD_LOGIC; -- 复位信号
+        select_buttons : in STD_LOGIC_VECTOR(5 downto 0); -- 选择商品的按钮
+        payment_signal : in STD_LOGIC; -- 付款信号
+        led_out_of_stock : out STD_LOGIC_VECTOR(5 downto 0); -- 指示缺货的LED
+        led_dispense : out STD_LOGIC; -- 出货指示LED
+        led_price_display : out STD_LOGIC_VECTOR(3 downto 0); -- 商品价格显示
+        sel : out STD_LOGIC_VECTOR(7 downto 0); -- 数码管选择信号
+        smg : out STD_LOGIC_VECTOR(6 downto 0); -- 数码管显示内容
+        add_signal : in std_logic
+    );
+end VendingMachine;
+
+architecture Behavioral of VendingMachine is
+    type integer_vector is array (0 to 5) of integer range 0 to 10;  
+    signal item_counts : integer_vector := (2, 2, 2, 2, 2, 2); 
+    signal item_prices : integer_vector := (3, 5, 1, 4, 2, 6);
+    signal cnt: integer range 0 to 7 := 0;  
+    signal timer : integer range 0 to 60:= 60; 
+    signal selected_item : integer:=7;
+    signal clk_counter : integer range 0 to 100:= 0; 
+    signal current_price : integer := 0; 
+    signal if_is_selected : STD_LOGIC :='0'; 
+    signal cnnt : integer range 0 to 20000:=0;
+begin
+    
+    clk_counter_process: process(clk, reset)
+    begin
+        if reset = '0' then
+            clk_counter <= 0;
+            timer <= 60;
+        elsif rising_edge(clk) then
+            clk_counter <= clk_counter + 1;
+            if clk_counter = 99 then
+                clk_counter <= 0;
+                if if_is_selected = '1' and add_signal = '0' then
+					timer <= timer - 1;
+					if timer = 0 then
+						timer <= 60;
+					end if;
+				elsif if_is_selected = '0' then
+					timer <= 60;
+				end if;
+            end if;
+        end if;
+    end process;
+
+    --time_add_process: process(clk_counter, if_is_selected, reset)
+    --begin
+      --  if reset = '0' or timer = 0 then
+        --    timer <= 60; -- 重置计时器
+        --elsif if_is_selected = '0' then
+         --   timer <= 60; -- 重置计时器
+       -- elsif clk_counter > 98 and if_is_selected = '1' then
+   -- end process;
+
+    select_item_and_payment: process(cllk, reset)
+    begin
+        if reset = '0' or timer < 1 then
+            selected_item <= 7;
+            if_is_selected <= '0';
+        elsif cllk'event and cllk = '1' then
+            if add_signal = '1' then
+				for i in 0 to 5 loop
+					if item_counts(i) < 9 and select_buttons(i) = '0' then
+						selected_item <= i;
+					elsif cnnt = 20000 then 
+						selected_item <= 7;
+					end if;
+				end loop;
+			else
+				for i in 0 to 5 loop
+					if select_buttons(i) = '0' and item_counts(i) > 0 and if_is_selected = '0' then
+						if_is_selected <= '1';
+						selected_item <= i;
+					elsif payment_signal = '0' and timer > 0 and if_is_selected = '1' then
+						if_is_selected <= '0';
+						selected_item <= 7;
+					end if;
+				end loop;
+			end if;
+		end if;
+    end process;
+
+
+    payment_and_dispense: process(cllk, reset,if_is_selected,payment_signal,selected_item)
+    begin
+        if reset = '0' then
+            led_dispense <= '0';
+            item_counts <= (2, 3, 4, 5, 6, 7);
+        elsif cllk'event and cllk = '1' then
+            if payment_signal = '0' and timer > 0 and add_signal = '0' then
+                led_dispense <= '1';
+                item_counts(selected_item) <= item_counts(selected_item) - 1;
+            elsif add_signal = '1' and selected_item > -1 and selected_item < 6 then
+				cnnt <= cnnt + 1;
+				if cnnt = 20000 then
+					cnnt<=0;
+					if item_counts(selected_item) < 9 then 
+						item_counts(selected_item) <= item_counts(selected_item) + 1;
+					end if;
+				end if;
+            else
+                led_dispense <= '0'; 
+            end if;
+        end if;
+    end process;
+
+    display_logic: process(selected_item, item_counts, item_prices, timer,if_is_selected)
+    begin
+        if if_is_selected = '1' then
+            current_price <= item_prices(selected_item); 
+        elsif if_is_selected = '0' then
+            current_price <= 0; 
+        end if;
+
+        led_price_display <= conv_std_logic_vector(current_price, 4);
+
+        led_out_of_stock <= "000000";
+
+        for i in 0 to 5 loop
+            if item_counts(i) = 0 then
+                led_out_of_stock(i) <= '1';
+            end if;
+        end loop;
+    end process;
+
+	
+    show: process(cllk)
+    begin
+        if rising_edge(cllk) then  
+            case cnt is
+                when 0 =>  
+                    sel <= "11111110"; 
+                    case item_counts(0) is
+                        when 0 => smg <= "1111110"; -- 0
+						when 1 => smg <= "0110000"; -- 1
+						when 2 => smg <= "1101101"; -- 2
+						when 3 => smg <= "1111001"; -- 3
+						when 4 => smg <= "0110011"; -- 4
+						when 5 => smg <= "1011011"; -- 5
+						when 6 => smg <= "1011111"; -- 6
+						when 7 => smg <= "1110000"; -- 7
+						when 8 => smg <= "1111111"; -- 8
+						when 9 => smg <= "1111011"; -- 9
+						when others => smg <= "0000000";
+                    end case;
+
+                when 1 =>  
+                    sel <= "11111101"; 
+                    case item_counts(1) is
+                        when 0 => smg <= "1111110"; -- 0
+						when 1 => smg <= "0110000"; -- 1
+						when 2 => smg <= "1101101"; -- 2
+						when 3 => smg <= "1111001"; -- 3
+						when 4 => smg <= "0110011"; -- 4
+						when 5 => smg <= "1011011"; -- 5
+						when 6 => smg <= "1011111"; -- 6
+						when 7 => smg <= "1110000"; -- 7
+						when 8 => smg <= "1111111"; -- 8
+						when 9 => smg <= "1111011"; -- 9
+						when others => smg <= "0000000"; 
+                    end case;
+
+                when 2 => 
+                    sel <= "11111011"; 
+                    case item_counts(2) is
+                        when 0 => smg <= "1111110"; -- 0
+						when 1 => smg <= "0110000"; -- 1
+						when 2 => smg <= "1101101"; -- 2
+						when 3 => smg <= "1111001"; -- 3
+						when 4 => smg <= "0110011"; -- 4
+						when 5 => smg <= "1011011"; -- 5
+						when 6 => smg <= "1011111"; -- 6
+						when 7 => smg <= "1110000"; -- 7
+						when 8 => smg <= "1111111"; -- 8
+						when 9 => smg <= "1111011"; -- 9
+						when others => smg <= "0000000"; 
+                    end case;
+
+                when 3 =>  
+                    sel <= "11110111";  
+                    case item_counts(3) is
+                        when 0 => smg <= "1111110"; -- 0
+						when 1 => smg <= "0110000"; -- 1
+						when 2 => smg <= "1101101"; -- 2
+						when 3 => smg <= "1111001"; -- 3
+						when 4 => smg <= "0110011"; -- 4
+						when 5 => smg <= "1011011"; -- 5
+						when 6 => smg <= "1011111"; -- 6
+						when 7 => smg <= "1110000"; -- 7
+						when 8 => smg <= "1111111"; -- 8
+						when 9 => smg <= "1111011"; -- 9
+						when others => smg <= "0000000"; 
+                    end case;
+
+                when 4 =>  
+                    sel <= "11101111";  
+                    case item_counts(4) is
+                        when 0 => smg <= "1111110"; -- 0
+						when 1 => smg <= "0110000"; -- 1
+						when 2 => smg <= "1101101"; -- 2
+						when 3 => smg <= "1111001"; -- 3
+						when 4 => smg <= "0110011"; -- 4
+						when 5 => smg <= "1011011"; -- 5
+						when 6 => smg <= "1011111"; -- 6
+						when 7 => smg <= "1110000"; -- 7
+						when 8 => smg <= "1111111"; -- 8
+						when 9 => smg <= "1111011"; -- 9
+						when others => smg <= "0000000"; 
+                    end case;
+
+                when 5 =>  
+                    sel <= "11011111";  
+                    case item_counts(5) is
+                        when 0 => smg <= "1111110"; -- 0
+						when 1 => smg <= "0110000"; -- 1
+						when 2 => smg <= "1101101"; -- 2
+						when 3 => smg <= "1111001"; -- 3
+						when 4 => smg <= "0110011"; -- 4
+						when 5 => smg <= "1011011"; -- 5
+						when 6 => smg <= "1011111"; -- 6
+						when 7 => smg <= "1110000"; -- 7
+						when 8 => smg <= "1111111"; -- 8
+						when 9 => smg <= "1111011"; -- 9
+						when others => smg <= "0000000"; 
+                    end case;
+
+                when 6 =>  
+                    sel <= "10111111"; 
+                    case timer / 10 is
+                        when 0 => smg <= "1111110"; -- 0
+						when 1 => smg <= "0110000"; -- 1
+						when 2 => smg <= "1101101"; -- 2
+						when 3 => smg <= "1111001"; -- 3
+						when 4 => smg <= "0110011"; -- 4
+						when 5 => smg <= "1011011"; -- 5
+						when 6 => smg <= "1011111"; -- 6
+						when 7 => smg <= "1110000"; -- 7
+						when 8 => smg <= "1111111"; -- 8
+						when 9 => smg <= "1111011"; -- 9
+						when others => smg <= "0000000";  
+                    end case;
+
+                when 7 =>  
+                    sel <= "01111111";  
+                    case timer mod 10 is
+                        when 0 => smg <= "1111110"; -- 0
+						when 1 => smg <= "0110000"; -- 1
+						when 2 => smg <= "1101101"; -- 2
+						when 3 => smg <= "1111001"; -- 3
+						when 4 => smg <= "0110011"; -- 4
+						when 5 => smg <= "1011011"; -- 5
+						when 6 => smg <= "1011111"; -- 6
+						when 7 => smg <= "1110000"; -- 7
+						when 8 => smg <= "1111111"; -- 8
+						when 9 => smg <= "1111011"; -- 9
+						when others => smg <= "0000000";  
+                    end case;
+                when others =>
+                    sel <= "11111111";  
+                    smg <= "0000000";   
+            end case;
+            cnt <= (cnt + 1) mod 8;  
+        end if;
+    end process;
+end Behavioral;
