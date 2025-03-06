@@ -1,0 +1,1 @@
+This is a selfless sharing address about the FPGA homework of Hunan University of Science and Technology. Only the code is given. The rest of the links and onboard tests are for you to explore by yourself. Come on, the future belongs to you.          
